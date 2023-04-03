@@ -1,6 +1,5 @@
 #include <ch32v00x.h>
 #include <core_riscv.h>
-#include <stdlib.h>
 #include "Arduino.h"
 
 extern void setup();
@@ -11,11 +10,7 @@ extern "C" {
 volatile uint32_t __us = 0, __ms = 0;
 
 #ifndef NO_INTR
-struct __attribute__((__packed__)) intr_t {
-  uint8_t pin;
-  void(*fn)();
-  intr_t *next;
-} *__intrs = nullptr;
+isr_t __intrs[8] = { nullptr };
 #endif
 
 void SystemInit() {
@@ -328,30 +323,8 @@ void analogWrite(uint8_t pin, uint16_t value) {
 #endif
 
 #ifndef NO_INTR
-void attachInterrupt(uint8_t pin, void(*fn)(), uint8_t mode) {
-  if (__intrs) {
-    intr_t *intr = __intrs;
-
-    while (intr->next) {
-      intr = intr->next;
-    }
-    intr->next = (intr_t*)malloc(sizeof( intr_t));
-    if (! intr->next)
-      return;
-    intr = intr->next;
-    intr->pin = pin;
-    intr->fn = fn;
-    intr->next = nullptr;
-  } else {
-    __intrs = (intr_t*)malloc(sizeof(intr_t));
-    if (! __intrs)
-      return;
-    __intrs->pin = pin;
-    __intrs->fn = fn;
-    __intrs->next = nullptr;
-    NVIC_SetPriority(EXTI7_0_IRQn, 6 << 4); // NVIC_PriorityGroup=2, NVIC_IRQChannelPreemptionPriority=1, NVIC_IRQChannelSubPriority=2
-    NVIC_EnableIRQ(EXTI7_0_IRQn);
-  }
+void attachInterrupt(uint8_t pin, isr_t fn, uint8_t mode) {
+  __intrs[pin & 0x07] = fn;
   AFIO->EXTICR &= ~(0x03 << ((pin & 0x07) * 2));
   AFIO->EXTICR |= (pin >> 3) << ((pin & 0x07) * 2);
   pin &= 0x07;
@@ -365,32 +338,21 @@ void attachInterrupt(uint8_t pin, void(*fn)(), uint8_t mode) {
     EXTI->FTENR &= ~(1 << pin);
   EXTI->INTENR |= (1 << pin);
   EXTI->EVENR |= (1 << pin);
+  NVIC_SetPriority(EXTI7_0_IRQn, 6 << 4); // NVIC_PriorityGroup=2, NVIC_IRQChannelPreemptionPriority=1, NVIC_IRQChannelSubPriority=2
+  NVIC_EnableIRQ(EXTI7_0_IRQn);
 }
 
 void detachInterrupt(uint8_t pin) {
-  if (__intrs) {
-    intr_t *intr = __intrs;
-    intr_t *prev = nullptr;
-
-    while (intr) {
-      if (intr->pin == pin)
-        break;
-      prev = intr;
-      intr = intr->next;
+  pin &= 0x07;
+  if (__intrs[pin]) {
+    __intrs[pin] = nullptr;
+    EXTI->INTENR &= ~(1 << pin);
+    EXTI->EVENR &= ~(1 << pin);
+    for (uint8_t i = 0; i < 8; ++i) {
+      if (__intrs[i])
+        return;
     }
-    if (intr) {
-      pin &= 0x07;
-      EXTI->INTENR &= ~(1 << pin);
-      EXTI->EVENR &= ~(1 << pin);
-      if (prev)
-        prev->next = intr->next;
-      else
-        __intrs = intr->next;
-      free(intr);
-      if (! __intrs) {
-        NVIC_DisableIRQ(EXTI7_0_IRQn);
-      }
-    }
+    NVIC_DisableIRQ(EXTI7_0_IRQn);
   }
 }
 #endif
@@ -499,17 +461,12 @@ void __attribute__((interrupt("WCH-Interrupt-fast"))) TIM2_IRQHandler() {
 }
 
 #ifndef NO_INTR
-void __attribute__((interrupt("WCH-Interrupt-fast"))) EXTI7_0_IRQHandler() {
+void __attribute__((interrupt)) EXTI7_0_IRQHandler() { // Not interrupt("WCH-Interrupt-fast")!!!
   uint32_t flags = EXTI->INTFR;
 
-  if (__intrs) {
-    intr_t *intr = __intrs;
-
-    while (intr) {
-      if (flags & (1 << (intr->pin & 0x07))) {
-        intr->fn();
-      }
-      intr = intr->next;
+  for (uint8_t i = 0; i < 8; ++i) {
+    if (__intrs[i] && (flags & (1 << i))) {
+      __intrs[i]();
     }
   }
   EXTI->INTFR = flags;

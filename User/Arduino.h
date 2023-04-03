@@ -28,7 +28,12 @@ enum { INPUT, INPUT_PULLUP, INPUT_PULLDOWN
 };
 enum { LOW = 0, HIGH = 1 };
 enum { LSBFIRST, MSBFIRST };
+
+#ifndef NO_INTR
 enum { RISING, FALLING, CHANGE };
+
+typedef void (*isr_t)();
+#endif
 
 extern volatile uint32_t __us, __ms;
 
@@ -49,7 +54,7 @@ void analogWrite(uint8_t pin, uint16_t value);
 #endif
 
 #ifndef NO_INTR
-void attachInterrupt(uint8_t pin, void(*fn)(), uint8_t mode);
+void attachInterrupt(uint8_t pin, isr_t fn, uint8_t mode);
 void detachInterrupt(uint8_t pin);
 #endif
 

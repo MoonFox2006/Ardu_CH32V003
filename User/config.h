@@ -60,7 +60,7 @@
 #define SPI_REMAP   SPI_REMAP_0
 
 #define NO_IDLE /* PROMLEM!!! Comment to use yield() in delayMicroseconds() */
-#define NO_INTR /* PROMLEM!!! Comment to use attachInterrupt() */
+#define NO_INTR /* Comment to use attachInterrupt() */
 //#define NO_DEBUG /* Comment to use PD1 as SWIO */
 //#define NO_SERIAL /* Comment to use Serial output */
 //#define NO_PWM /* Comment to use analogWrite() */
